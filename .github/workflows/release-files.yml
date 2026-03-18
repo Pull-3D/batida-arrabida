@@ -1,0 +1,254 @@
+name: Release Files
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "20"
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pkg.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - id: pkg
+        name: Read package.json version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - id: tag
+        name: Resolve release tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v${{ steps.pkg.outputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-macos:
+    name: macOS (${{ matrix.arch }})
+    needs: version
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: universal
+            builder_args: "--mac dmg --universal --publish never"
+          - arch: arm64
+            builder_args: "--mac dmg --arm64 --publish never"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build:app
+
+      - name: Check Electron output
+        shell: bash
+        run: |
+          ls -lah
+          ls -lah dist || true
+          ls -lah dist-electron || true
+          ls -lah release || true
+          test -f dist-electron/main.js
+
+      - name: Build release artifacts
+        shell: bash
+        run: npx electron-builder ${{ matrix.builder_args }} --config electron-builder.release.yml
+
+      - name: List macOS artifacts
+        shell: bash
+        run: |
+          find release -type f -name "*.dmg" -print
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            release/Batida do Sado-${{ needs.version.outputs.version }}-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows (${{ matrix.arch }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build:app
+
+      - name: Check Electron output
+        shell: bash
+        run: |
+          ls -lah
+          ls -lah dist || true
+          ls -lah dist-electron || true
+          ls -lah release || true
+          test -f dist-electron/main.js
+
+      - name: Build installer
+        shell: bash
+        run: npx electron-builder --win nsis --${{ matrix.arch }} --publish never --config electron-builder.release.yml
+
+      - name: Build portable
+        shell: bash
+        run: npx electron-builder --win portable --${{ matrix.arch }} --publish never --config electron-builder.release.yml
+
+      - name: List Windows artifacts
+        shell: bash
+        run: |
+          find release -type f -name "*.exe" -print
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            release/Batida do Sado-Setup-${{ needs.version.outputs.version }}-${{ matrix.arch }}.exe
+            release/Batida do Sado-Portable-${{ needs.version.outputs.version }}-${{ matrix.arch }}.exe
+          if-no-files-found: error
+
+  build-linux:
+    name: Linux (${{ matrix.arch }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x64
+            deb_arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            deb_arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot dpkg rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build:app
+
+      - name: Check Electron output
+        shell: bash
+        run: |
+          ls -lah
+          ls -lah dist || true
+          ls -lah dist-electron || true
+          ls -lah release || true
+          test -f dist-electron/main.js
+
+      - name: Build Linux artifacts
+        shell: bash
+        run: npx electron-builder --linux AppImage deb --${{ matrix.arch }} --publish never --config electron-builder.release.yml
+
+      - name: List Linux artifacts
+        shell: bash
+        run: |
+          find release -type f -name "*.AppImage" -print
+          find release -type f -name "*.deb" -print
+
+      - name: Normalize Linux artifact names
+        shell: bash
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+
+          if [[ "${{ matrix.arch }}" == "x64" ]]; then
+            cp "release/Batida do Sado-${VERSION}-x86_64.AppImage" "release/Batida do Sado-${VERSION}.AppImage"
+            cp "release/Batida do Sado-${VERSION}-amd64.deb" "release/deemix-app_${VERSION}_amd64.deb"
+          else
+            cp "release/Batida do Sado-${VERSION}-arm64.deb" "release/deemix-app_${VERSION}_arm64.deb"
+          fi
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            release/Batida do Sado-${{ needs.version.outputs.version }}${{ matrix.arch == 'arm64' && '-arm64' || '' }}.AppImage
+            release/deemix-app_${{ needs.version.outputs.version }}_${{ matrix.deb_arch }}.deb
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs:
+      - version
+      - build-macos
+      - build-windows
+      - build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files
+
+      - name: Flatten release files
+        shell: bash
+        run: |
+          mkdir -p final
+          find release-files -type f -exec cp {} final/ \;
+          ls -lah final
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Batida do Sado ${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          files: final/*

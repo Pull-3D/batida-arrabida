@@ -1,0 +1,10 @@
+node_modules
+release
+dist
+dist-electron
+out
+coverage
+*.log
+.DS_Store
+.vscode
+.env
