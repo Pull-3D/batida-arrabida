@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
   CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
 jobs:
@@ -249,6 +249,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: Batida do Sado ${{ needs.version.outputs.version }}
+          name: Arrábida Grooves ${{ needs.version.outputs.version }}
           generate_release_notes: true
           files: final/*
