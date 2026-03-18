@@ -50,8 +50,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: universal
-            builder_args: "--mac dmg --universal --publish never"
+          - arch: x64
+            builder_args: "--mac dmg --x64 --publish never"
           - arch: arm64
             builder_args: "--mac dmg --arm64 --publish never"
     steps:
