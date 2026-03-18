@@ -61,3 +61,12 @@ linux:
 deb:
   packageName: deemix-app
   maintainer: "Charroco <pescanosado@gmail.com>"
+
+extraResources:
+  - from: node_modules/ffmpeg-static
+    to: ffmpeg-static
+    filter:
+      - "**/*"
+
+asarUnpack:
+  - "**/node_modules/ffmpeg-static/**"

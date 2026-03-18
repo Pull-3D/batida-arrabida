@@ -7,6 +7,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createDecipheriv } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
+import ffmpegStatic from 'ffmpeg-static'
 
 let getMainWindow = () => null
 let backendReady = false
@@ -74,9 +75,26 @@ const DEFAULT_TAG_MAPPINGS = {
 
 const DEFAULT_COVER_SIZE = '1400x1400'
 
+function getBundledFfmpegPath() {
+  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+  const candidates = [
+    typeof ffmpegStatic === 'string' ? ffmpegStatic : '',
+    path.join(process.resourcesPath || '', 'ffmpeg-static', exe),
+    path.join(process.resourcesPath || '', 'ffmpeg-static', 'ffmpeg'),
+    path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', exe),
+    path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg')
+  ].filter(Boolean)
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) return candidate
+    } catch {}
+  }
+  return 'ffmpeg'
+}
+
 function ffmpegInstalled() {
   try {
-    const result = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' })
+    const result = spawnSync(getBundledFfmpegPath(), ['-version'], { stdio: 'ignore' })
     return !result.error && result.status === 0
   } catch {
     return false
@@ -182,7 +200,8 @@ async function downloadSegments(directory, segmentUrls, key, job) {
 
 async function runCommand(cmd, args, context = 'command') {
   await new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const actualCmd = cmd === 'ffmpeg' ? getBundledFfmpegPath() : cmd
+    const child = spawn(actualCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let stderr = ''
     child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
     child.on('error', reject)
